@@ -1,5 +1,4 @@
 import { Connection, PublicKey } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { balanceCheckQueue, redis } from '../redis/redis';
 import User from '../models/User';
 
@@ -7,11 +6,32 @@ const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.mainnet-beta.solana.co
 const TOKEN_MINT = process.env.TOKEN_MINT!; // Your SPL token mint address
 const MIN_BALANCE = process.env.MIN_BALANCE || '1'; // Minimum tokens required
 
+// New function for checking single wallet balance
+export async function checkSingleWalletBalance(walletAddress: string) {
+  const connection = new Connection(SOLANA_RPC);
+  const mintPubkey = new PublicKey(TOKEN_MINT);
+  const walletPubkey = new PublicKey(walletAddress);
+  
+  try {
+    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+      walletPubkey,
+      { mint: mintPubkey }
+    );
+
+    const balance = tokenAccounts.value[0]?.account.data.parsed.info.tokenAmount.uiAmount || 0;
+    const hasMinBalance = balance >= Number(MIN_BALANCE);
+
+    return { balance, hasMinBalance };
+  } catch (error) {
+    console.error(`Error checking balance for ${walletAddress}:`, error);
+    throw error;
+  }
+}
+
 async function checkWalletBalances() {
   console.log('Starting wallet balance check...');
   const connection = new Connection(SOLANA_RPC);
   const mintPubkey = new PublicKey(TOKEN_MINT);
-
   const users = await User.find({ walletAddress: { $exists: true } });
   console.log(`Found ${users.length} users with wallet addresses to check`);
 
@@ -35,9 +55,9 @@ async function checkWalletBalances() {
       // Store permission updates in Redis
       if (user.hasRequiredBalance !== hasMinBalance) {
         console.log(`Permission change for user ${user.telegramUserId}: ${hasMinBalance ? 'granted' : 'revoked'}`);
-        await redis.hset(
-          'telegram:permission-updates',
-          user.telegramUserId,
+        // Change the Redis key pattern to match what the Telegram bot expects
+        await redis.set(
+          `user:${user.telegramUserId}:permissions`,
           JSON.stringify({
             hasRequiredBalance: hasMinBalance,
             timestamp: Date.now()

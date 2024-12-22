@@ -30,6 +30,7 @@ const UserSchema: Schema = new Schema({
   walletAddress: {
     type: String,
     required: false,
+    unique: true,
   },
   nonce: {
     type: String,

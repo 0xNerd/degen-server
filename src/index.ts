@@ -4,19 +4,15 @@ import mongoose from 'mongoose';
 import User from './models/User'; 
 import cors from 'cors';
 import { web3Auth, authorizedPk } from './middleware/web3Auth';
-import { Connection, PublicKey } from '@solana/web3.js';
 import { redis } from './redis/redis';
-
 dotenv.config();
 
-const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.mainnet-beta.solana.com';
-const TOKEN_MINT = process.env.TOKEN_MINT!;
 const MIN_BALANCE = process.env.MIN_BALANCE || '1';
-
-const app = express();
+const mongoURI = process.env.MONGODB_URI
 const port = process.env.PORT || 3000;
 
-const mongoURI = process.env.MONGODB_URI
+const app = express();
+
 if (!mongoURI) {
   throw new Error('MONGODB_URI is not set in the environment variables');
 }
@@ -27,7 +23,65 @@ mongoose.connect(mongoURI)
     console.log('MongoDB connected');
     // Initialize Redis and balance checker only after MongoDB is connected
     require('./redis/redis');
-    require('./solana/balance');
+    const { checkSingleWalletBalance } = require('./solana/balance');
+    
+    // Define the connect-wallet route here, after imports are ready
+    app.post('/api/connect-wallet', 
+      web3Auth({ action: 'telegram:connect-wallet', allowSkipCheck: true }),
+      async (req, res) => {
+        try {
+          const { sessionId, signature } = req.body;
+          const userPubKeyString = authorizedPk(res);
+          if (!userPubKeyString) {
+            return res.status(400).json({ error: 'No public key found' });
+          }
+          // Create or update user data
+          const user = await User.findOneAndUpdate(
+            { sessionId: sessionId },
+            { walletAddress: userPubKeyString, signature: signature },
+            { upsert: true, new: true }
+          );
+
+          // Use checkSingleWalletBalance instead
+          const { balance, hasMinBalance } = await checkSingleWalletBalance(userPubKeyString);
+
+          // Update user with balance info
+          user.tokenBalance = balance.toString();
+          user.hasRequiredBalance = hasMinBalance;
+          user.lastChecked = new Date();
+          await user.save();
+
+          // Store permission update in Redis
+          await redis.hset(
+            'telegram:permission-updates',
+            user.telegramUserId,
+            JSON.stringify({
+              hasRequiredBalance: hasMinBalance,
+              timestamp: Date.now()
+            })
+          );
+
+          if (!hasMinBalance) {
+            return res.status(403).json({
+              error: 'Insufficient token balance',
+              balance,
+              required: MIN_BALANCE
+            });
+          }
+
+          res.status(200).json({ 
+            message: 'Wallet connected successfully', 
+            user,
+            balance,
+            hasRequiredBalance: true,
+            inviteUrl: user.inviteUrl
+          });
+
+        } catch (error) {
+          console.error("Error handling wallet connection:", error);
+          res.status(500).send("Internal Server Error");
+        }
+      });
   })
   .catch((err) => console.error('MongoDB connection error:', err));
 
@@ -50,82 +104,15 @@ app.get('/', (req, res) => {
   res.send('Hello from your Token Gating Bot Backend!');
 });
 
-app.post('/api/connect-wallet', 
-  web3Auth({ action: 'telegram:connect-wallet', allowSkipCheck: true }),
-  async (req, res) => {
-  try {
-    const { sessionId, signature, telegramId } = req.body;
-    const userPubKeyString = authorizedPk(res);
-    if (!userPubKeyString) {
-      return res.status(400).json({ error: 'No public key found' });
-    }
-    // Create or update user data
-    const user = await User.findOneAndUpdate(
-      { sessionId: sessionId },
-      { telegramUserId: telegramId, walletAddress: userPubKeyString, signature: signature },
-      { upsert: true, new: true }
-    );
-
-    // Check balance immediately
-    const connection = new Connection(SOLANA_RPC);
-    const mintPubkey = new PublicKey(TOKEN_MINT);
-    const walletPubkey = new PublicKey(userPubKeyString);
-    
-    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-      walletPubkey,
-      { mint: mintPubkey }
-    );
-
-    const balance = tokenAccounts.value[0]?.account.data.parsed.info.tokenAmount.uiAmount || 0;
-    const hasMinBalance = balance >= Number(MIN_BALANCE);
-
-    // Update user with balance info
-    user.tokenBalance = balance.toString();
-    user.hasRequiredBalance = hasMinBalance;
-    user.lastChecked = new Date();
-    await user.save();
-
-    // Store permission update in Redis
-    await redis.hset(
-      'telegram:permission-updates',
-      telegramId,
-      JSON.stringify({
-        hasRequiredBalance: hasMinBalance,
-        timestamp: Date.now()
-      })
-    );
-
-    if (!hasMinBalance) {
-      return res.status(403).json({
-        error: 'Insufficient token balance',
-        balance,
-        required: MIN_BALANCE
-      });
-    }
-
-    res.status(200).json({ 
-      message: 'Wallet connected successfully', 
-      user,
-      balance,
-      hasRequiredBalance: true,
-      inviteUrl: user.inviteUrl
-    });
-
-  } catch (error) {
-    console.error("Error handling wallet connection:", error);
-    res.status(500).send("Internal Server Error");
-  }
-});
-
 app.post('/api/start-check', 
   
   async (req, res) => {
   try {
     const { sessionId, inviteUrl, telegramId } = req.body;
     console.log('start check', req.body);
-
-    // Find user by telegramId
-    let user = await User.findOne({ telegramUserId: telegramId });
+    if (!sessionId || !inviteUrl || !telegramId) { return res.status(400).json({ error: 'Invalid request' }); }
+    // Find user by sessionId
+    let user = await User.findOne({ sessionId: sessionId });
     // add inviteUrl to user if not already present
     user.inviteUrl = inviteUrl;
     await user.save();
