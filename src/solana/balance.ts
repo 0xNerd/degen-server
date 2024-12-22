@@ -39,7 +39,7 @@ async function checkWalletBalances() {
           'telegram:permission-updates',
           user.telegramUserId,
           JSON.stringify({
-            hasAccess: hasMinBalance,
+            hasRequiredBalance: hasMinBalance,
             timestamp: Date.now()
           })
         );
