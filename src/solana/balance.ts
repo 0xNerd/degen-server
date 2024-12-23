@@ -1,5 +1,5 @@
 import { Connection, PublicKey } from '@solana/web3.js';
-import { balanceCheckQueue } from '../redis/redis';
+import { balanceCheckQueue } from '../redis/balanceQueue';
 import { redis } from '../redis';
 import User from '../models/User';
 import mongoose from 'mongoose';

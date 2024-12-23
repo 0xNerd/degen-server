@@ -62,7 +62,6 @@ export class TweetScraper {
     for await (const tweet of this.scraper.getTweets(username, count)) {
       tweets.push(tweet);
     }
-
     // Cache the results
     await redis.setex(cacheKey, this.CACHE_EXPIRY, JSON.stringify(tweets));
     return tweets;
@@ -116,5 +115,31 @@ export class TweetScraper {
     const trends = await this.scraper.getTrends();
     await redis.setex(cacheKey, this.CACHE_EXPIRY, JSON.stringify(trends));
     return trends;
+  }
+
+  async getFollowerCount(userId: string): Promise<number> {
+    const cacheKey = `follower_count:${userId}`;
+    
+    // Try to get from cache first
+    const cachedCount = await redis.get(cacheKey);
+    if (cachedCount) {
+      return parseInt(cachedCount);
+    }
+
+    // If not in cache, fetch from Twitter
+    try {
+      const followersIterator = this.scraper.getFollowers(userId, 1);
+      const firstResult = await followersIterator.next();
+      const followerCount = (!firstResult.done && firstResult.value) 
+        ? firstResult.value.followersCount || 0 
+        : 0;
+
+      // Cache the result
+      await redis.setex(cacheKey, this.CACHE_EXPIRY, followerCount.toString());
+      return followerCount;
+    } catch (error) {
+      console.error('Error fetching follower count:', error);
+      return 0;
+    }
   }
 }

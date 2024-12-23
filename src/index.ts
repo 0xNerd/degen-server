@@ -6,6 +6,7 @@ import cors from 'cors';
 import { web3Auth, authorizedPk } from './middleware/web3Auth';
 import { RedisClient } from './redis/config';
 import { BalanceChecker } from './solana/balance';
+import { SentimentClient } from './clients/sentimentClient';
 dotenv.config();
 
 const MIN_BALANCE = process.env.MIN_BALANCE || '1';
@@ -142,6 +143,10 @@ class AppServer {
       // Then initialize BalanceChecker
       await BalanceChecker.getInstance().initialize();
       console.log('BalanceChecker initialized');
+
+      // Initialize SentimentClient
+      await SentimentClient.getInstance().initialize();
+      console.log('SentimentClient initialized');
 
       // Finally start the server
       this.app.listen(port, () => {
