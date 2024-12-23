@@ -105,11 +105,13 @@ export class SentimentClient {
 
       console.log(`Found ${significantTweets.length} significant tweets`);
 
-      await redis.setex(
-        'latest_analysis', 
-        3600,
-        JSON.stringify(significantTweets)
-      );
+      // Store in Redis and publish update
+      await redis.setex('latest_analysis', 3600, JSON.stringify(significantTweets));
+      await redis.publish('sentiment:updates', JSON.stringify({
+        timestamp: Date.now(),
+        count: significantTweets.length,
+        tweets: significantTweets
+      }));
 
     } catch (error) {
       console.error('Error in main loop:', error);
