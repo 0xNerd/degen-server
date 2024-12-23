@@ -1,8 +1,7 @@
 import { Connection, PublicKey } from '@solana/web3.js';
-import { balanceCheckQueue } from '../redis/balanceQueue';
 import { redis } from '../redis';
 import User from '../models/User';
-import mongoose from 'mongoose';
+
 import { 
   SOLANA_RPC, 
   TOKEN_MINT, 
@@ -12,7 +11,6 @@ import {
 export class BalanceChecker {
   private static instance: BalanceChecker;
   private connection: Connection;
-  private initialized: boolean = false;
 
   private constructor() {
     if (!process.env.TOKEN_MINT) {
@@ -29,21 +27,6 @@ export class BalanceChecker {
       BalanceChecker.instance = new BalanceChecker();
     }
     return BalanceChecker.instance;
-  }
-
-  public async initialize(): Promise<void> {
-    if (this.initialized) return;
-
-    // Wait for MongoDB connection state to be connected (1)
-    while (mongoose.connection.readyState !== 1) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    // Only run initial balance check if there's a TOKEN_MINT
-    if (process.env.TOKEN_MINT) {
-      await this.checkWalletBalances();
-    }
-    this.initialized = true;
   }
 
   async checkSingleWalletBalance(walletAddress: string) {
@@ -137,34 +120,4 @@ export class BalanceChecker {
     
     console.log('Balance check completed');
   }
-
-  public isInitialized(): boolean {
-    return this.initialized;
-  }
 }
-
-// Export singleton instance methods
-export const checkSingleWalletBalance = (walletAddress: string) => 
-  BalanceChecker.getInstance().checkSingleWalletBalance(walletAddress);
-
-// Update queue processor to use the public method
-balanceCheckQueue.process(async (job) => {
-  if (!BalanceChecker.getInstance().isInitialized()) {
-    console.log('Skipping balance check - BalanceChecker not initialized');
-    return;
-  }
-  await BalanceChecker.getInstance().checkWalletBalances();
-});
-
-// Remove the immediate job and only keep the recurring one
-balanceCheckQueue.add(
-  {},
-  { 
-    repeat: { 
-      every: 5 * 60 * 1000  // 5 minutes
-    },
-    jobId: 'balance-check', // Add unique jobId
-    removeOnComplete: true,
-    removeOnFail: true
-  }
-);

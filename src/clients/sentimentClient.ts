@@ -1,5 +1,5 @@
 import { TweetScraper } from '../services/tweetScraper';
-import { TweetAnalyzer } from '../services/tweetAnalyzer';
+import { TweetAnalyzer, AnalyzedTweet } from '../services/tweetAnalyzer';
 import { redis } from '../redis/config';
 import Queue from 'bull';
 
@@ -58,7 +58,7 @@ export class SentimentClient {
       {},
       {
         repeat: {
-          every: 5 * 60 * 1000, // 5 minutes
+          every: parseInt(process.env.ANALYSIS_INTERVAL_MINUTES, 10) * 60 * 1000,
         },
         removeOnComplete: true,
         removeOnFail: 10, // Keep last 10 failed jobs for debugging
@@ -106,13 +106,35 @@ export class SentimentClient {
       console.log(`Found ${significantTweets.length} significant tweets`);
 
       // Store in Redis and publish update
-      await redis.setex('latest_analysis', 3600, JSON.stringify(significantTweets));
       await redis.publish('sentiment:updates', JSON.stringify({
         timestamp: Date.now(),
-        count: significantTweets.length,
-        tweets: significantTweets
+        metadata: {
+          totalTweetsAnalyzed: allTweets.length,
+          significantTweetsCount: significantTweets.length,
+          targetAccounts,
+          batchId: Date.now().toString(),
+        },
+        statistics: {
+          averageScore: significantTweets.reduce((acc, t) => acc + t.analysis.score, 0) / significantTweets.length,
+          averageCredibility: significantTweets.reduce((acc, t) => acc + t.analysis.credibilityScore, 0) / significantTweets.length,
+          sentimentDistribution: significantTweets.reduce((acc, t) => {
+            acc[t.analysis.sentiment] = (acc[t.analysis.sentiment] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>),
+          topTopics: this.getTopTopics(significantTweets),
+        },
+        tweets: significantTweets.map(tweet => ({
+          ...tweet,
+          engagement: {
+            likes: tweet.likes || 0,
+            retweets: tweet.retweets || 0,
+            replies: tweet.replies || 0,
+            views: tweet.views || 0,
+            bookmarks: tweet.bookmarkCount || 0
+          }
+        }))
       }));
-
+      
     } catch (error) {
       console.error('Error in main loop:', error);
       throw error;
@@ -121,9 +143,29 @@ export class SentimentClient {
 
   public async shutdown(): Promise<void> {
     console.log('Shutting down sentiment client...');
-    await this.analysisQueue.close();
-    await redis.quit();
+    if (this.analysisQueue) {
+        await this.analysisQueue.close();
+        console.log('Analysis queue closed');
+    }
+    if (redis) {
+        await redis.quit();
+        console.log('Redis connection closed');
+    }
     await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  private getTopTopics(tweets: AnalyzedTweet[]): { topic: string; count: number }[] {
+    const topicCounts = tweets
+      .flatMap(tweet => tweet.analysis.topics)
+      .reduce((acc, topic) => {
+        acc[topic] = (acc[topic] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+    return Object.entries(topicCounts)
+      .map(([topic, count]) => ({ topic, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5); // Top 5 topics
   }
 }
 

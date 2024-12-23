@@ -5,8 +5,10 @@ import User from './models/User';
 import cors from 'cors';
 import { web3Auth, authorizedPk } from './middleware/web3Auth';
 import { RedisClient } from './redis/config';
-import { BalanceChecker } from './solana/balance';
+import { BalanceChecker } from './services/balanceChecker';
 import { SentimentClient } from './clients/sentimentClient';
+import { BalanceClient } from './clients/balanceClient';
+
 dotenv.config();
 
 const MIN_BALANCE = process.env.MIN_BALANCE || '1';
@@ -140,9 +142,9 @@ class AppServer {
       await mongoose.connect(mongoURI!);
       console.log('MongoDB connected');
 
-      // Then initialize BalanceChecker
-      await BalanceChecker.getInstance().initialize();
-      console.log('BalanceChecker initialized');
+      // Initialize BalanceClient
+      await BalanceClient.getInstance().initialize();
+      console.log('BalanceClient initialized');
 
       // Initialize SentimentClient
       await SentimentClient.getInstance().initialize();
