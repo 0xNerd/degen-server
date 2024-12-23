@@ -26,25 +26,28 @@ export class TweetScraper {
       TWITTER_APP_SECRET,
       TWITTER_ACCESS_TOKEN,
       TWITTER_ACCESS_SECRET,
+      TWITTER_COOKIES,
     } = process.env;
 
-    if (!TWITTER_USERNAME || !TWITTER_PASSWORD) {
-      throw new Error('Twitter credentials not found in environment variables');
-    }
-
-    if (TWITTER_EMAIL && TWITTER_APP_KEY && TWITTER_APP_SECRET && 
-        TWITTER_ACCESS_TOKEN && TWITTER_ACCESS_SECRET) {
-      await this.scraper.login(
-        TWITTER_USERNAME,
-        TWITTER_PASSWORD,
-        TWITTER_EMAIL,
-        TWITTER_APP_KEY,
-        TWITTER_APP_SECRET,
-        TWITTER_ACCESS_TOKEN,
-        TWITTER_ACCESS_SECRET,
-      );
+    if (TWITTER_COOKIES) {
+      await this.scraper.setCookies(JSON.parse(TWITTER_COOKIES));
+    } else if (TWITTER_USERNAME && TWITTER_PASSWORD) {
+      if (TWITTER_EMAIL && TWITTER_APP_KEY && TWITTER_APP_SECRET && 
+          TWITTER_ACCESS_TOKEN && TWITTER_ACCESS_SECRET) {
+        await this.scraper.login(
+          TWITTER_USERNAME,
+          TWITTER_PASSWORD,
+          TWITTER_EMAIL,
+          TWITTER_APP_KEY,
+          TWITTER_APP_SECRET,
+          TWITTER_ACCESS_TOKEN,
+          TWITTER_ACCESS_SECRET,
+        );
+      } else {
+        await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD);
+      }
     } else {
-      await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD);
+      throw new Error('No valid Twitter authentication method found in environment variables');
     }
   }
 
