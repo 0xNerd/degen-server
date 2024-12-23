@@ -47,28 +47,34 @@ export class SentimentClient {
         await this.runMainLoop();
       } catch (error) {
         console.error('Error in main loop:', error);
-        throw error; // Bull will handle retry
+        throw error;
       } finally {
         this.isRunning = false;
+        // Add the next job after 30 seconds
+        setTimeout(() => {
+          this.analysisQueue.add({}, {
+            removeOnComplete: true,
+            removeOnFail: 10,
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 60000,
+            },
+          });
+        }, 30000);
       }
     });
 
-    // Add recurring job
-    await this.analysisQueue.add(
-      {},
-      {
-        repeat: {
-          every: parseInt(process.env.ANALYSIS_INTERVAL_MINUTES, 10) * 60 * 1000,
-        },
-        removeOnComplete: true,
-        removeOnFail: 10, // Keep last 10 failed jobs for debugging
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 60000, // 1 minute
-        },
-      }
-    );
+    // Add initial job to start the chain
+    await this.analysisQueue.add({}, {
+      removeOnComplete: true,
+      removeOnFail: 10,
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 60000,
+      },
+    });
 
     // Handle events
     this.analysisQueue.on('completed', (job) => {
@@ -84,20 +90,28 @@ export class SentimentClient {
     console.log('Starting main loop...');
 
     try {
-      const targetAccounts = ['elonmusk', 'NASA', 'vitalikbuterin'];
+      const keywordGroups = {
+        primary: ['new token', 'presale', 'stealth launch'],
+        context: ['crypto', 'gem']
+      };
       const allTweets = [];
 
-      for (const account of targetAccounts) {
-        console.log(`Fetching tweets from ${account}...`);
-        const tweets = await this.tweetScraper.getTweets(account, 10);
-        allTweets.push(...tweets);
-      }
-
+      // Keyword-based tweet searching
+      console.log('Searching tweets by keywords...');
+      const searchPromises = keywordGroups.primary.flatMap(primary => 
+        keywordGroups.context.map(context => 
+          this.tweetScraper.searchTweets(`${primary} ${context}`, 3)
+        )
+      );
+      console.log('Searching tweets by keywords...');
+      const searchResults = await Promise.all(searchPromises);
+      allTweets.push(...searchResults.flat());
+      
       console.log(`Retrieved ${allTweets.length} tweets total`);
 
       const analyzedTweets = await this.tweetAnalyzer.analyzeTweets(allTweets);
       console.log(`Analyzed ${analyzedTweets.length} tweets`);
-
+      console.log('Analyzed tweets:', analyzedTweets);
       const significantTweets = analyzedTweets.filter(tweet => 
         tweet.analysis.score > 0.7 && 
         tweet.analysis.credibilityScore > 0.6
@@ -111,7 +125,7 @@ export class SentimentClient {
         metadata: {
           totalTweetsAnalyzed: allTweets.length,
           significantTweetsCount: significantTweets.length,
-          targetAccounts,
+          targetAccounts: keywordGroups,
           batchId: Date.now().toString(),
         },
         statistics: {
@@ -134,7 +148,8 @@ export class SentimentClient {
           }
         }))
       }));
-      
+
+     
     } catch (error) {
       console.error('Error in main loop:', error);
       throw error;

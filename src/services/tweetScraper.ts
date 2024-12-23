@@ -1,4 +1,4 @@
-import { Scraper, Tweet } from 'agent-twitter-client';
+import { Scraper, Tweet, Profile } from 'agent-twitter-client';
 import { redis } from '../redis';
 import fs from 'fs';
 import path from 'path';
@@ -119,6 +119,17 @@ export class TweetScraper {
     }
   }
 
+  async getProfile(username: string): Promise<Profile> {
+    const cacheKey = `profile:${username}`;
+    const cachedProfile = await redis.get(cacheKey);
+    if (cachedProfile) {
+      return JSON.parse(cachedProfile);
+    }
+    const profile = await this.scraper.getProfile(username);
+    await redis.setex(cacheKey, this.CACHE_EXPIRY, JSON.stringify(profile));
+    return profile;
+  }
+
   async getTweets(username: string, count: number): Promise<Tweet[]> {
     const cacheKey = `tweets:${username}:${count}`;
     
@@ -158,8 +169,8 @@ export class TweetScraper {
     return tweets;
   }
 
-  async searchTweets(query: string, count: number = 100): Promise<Tweet[]> {
-    const cacheKey = `search:${query}:${count}`;
+  async searchTweets(query: string, count: number, searchMode: number = 1): Promise<Tweet[]> {
+    const cacheKey = `search:${query}:${count}:${searchMode}`;
     
     const cachedTweets = await redis.get(cacheKey);
     if (cachedTweets) {
@@ -167,7 +178,7 @@ export class TweetScraper {
     }
 
     const tweets = [];
-    for await (const tweet of this.scraper.searchTweets(query, count)) {
+    for await (const tweet of this.scraper.searchTweets(query, count, searchMode)) {
       tweets.push(tweet);
     }
 
