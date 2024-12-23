@@ -1,27 +1,25 @@
-import Redis from 'ioredis';
 import Bull from 'bull';
+import { redis } from './index';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+class BalanceCheckQueueManager {
+  private static instance: Bull.Queue;
 
-// Create Redis client
-export const redis = new Redis(REDIS_URL);
+  private constructor() {}
 
-// Create Bull queue for balance checks
-export const balanceCheckQueue = new Bull('balance-checks', REDIS_URL, {
-  defaultJobOptions: {
-    removeOnComplete: true,
-    removeOnFail: true,
+  public static getInstance(): Bull.Queue {
+    if (!BalanceCheckQueueManager.instance) {
+      BalanceCheckQueueManager.instance = new Bull('balance-checks', process.env.REDIS_URL, {
+        defaultJobOptions: {
+          removeOnComplete: true,
+          removeOnFail: true,
+        }
+      });
+    }
+    return BalanceCheckQueueManager.instance;
   }
-});
+}
 
-// Error handling
-redis.on('error', (error) => {
-  console.error('Redis connection error:', error);
-});
-
-redis.on('connect', () => {
-  console.log('Redis connected successfully');
-});
+export const balanceCheckQueue = BalanceCheckQueueManager.getInstance();
 
 // Optional: graceful shutdown
 process.on('SIGTERM', async () => {
