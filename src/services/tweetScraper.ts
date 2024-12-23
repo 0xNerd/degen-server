@@ -67,20 +67,30 @@ export class TweetScraper {
     try {
       // Try different authentication methods
       if (TWITTER_COOKIES) {
-        await this.setCookiesFromArray(JSON.parse(TWITTER_COOKIES));
-      } else {
-        // Try loading cookies from file
-        const savedCookies = await this.loadCookies();
-        if (savedCookies) {
-          await this.setCookiesFromArray(savedCookies);
-        } else if (TWITTER_USERNAME && TWITTER_PASSWORD) {
-          // Login with credentials if no cookies available
-          await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD, TWITTER_EMAIL);
-          console.log('Logged in to Twitter');
-          await this.saveCookies();
-        } else {
-          throw new Error('No valid Twitter authentication method found');
+        try {
+          const parsedCookies = JSON.parse(TWITTER_COOKIES);
+          if (!Array.isArray(parsedCookies)) {
+            throw new Error('TWITTER_COOKIES must be a valid JSON array');
+          }
+          await this.setCookiesFromArray(parsedCookies);
+        } catch (cookieError) {
+          console.error('Failed to parse TWITTER_COOKIES:', cookieError);
+          // Fall through to try other authentication methods
         }
+      }
+
+      // Try loading cookies from file
+      const savedCookies = await this.loadCookies();
+      if (savedCookies) {
+        console.log('Loaded cookies from file...');
+        await this.setCookiesFromArray(savedCookies);
+      } else if (TWITTER_USERNAME && TWITTER_PASSWORD) {
+        // Login with credentials if no cookies available
+        await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD, TWITTER_EMAIL);
+        console.log('Logged in to Twitter');
+        await this.saveCookies();
+      } else {
+        throw new Error('No valid Twitter authentication method found');
       }
 
       // Verify login status
