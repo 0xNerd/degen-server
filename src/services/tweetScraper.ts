@@ -1,13 +1,52 @@
 import { Scraper, Tweet } from 'agent-twitter-client';
 import { redis } from '../redis';
+import fs from 'fs';
+import path from 'path';
 
 export class TweetScraper {
   private scraper: Scraper;
   private readonly CACHE_EXPIRY = 600; // 10 minutes in seconds
   private static instance: TweetScraper;
   
+  // Add constants for paths
+  private static readonly CACHE_DIR = path.join(process.cwd(), 'tweetcache');
+  private readonly cookiesFilePath: string;
+
   private constructor() {
     this.scraper = new Scraper();
+    // Ensure cache directory exists
+    if (!fs.existsSync(TweetScraper.CACHE_DIR)) {
+      fs.mkdirSync(TweetScraper.CACHE_DIR, { recursive: true });
+    }
+    
+    this.cookiesFilePath = path.join(
+      TweetScraper.CACHE_DIR,
+      `${process.env.TWITTER_USERNAME}_cookies.json`
+    );
+  }
+
+  private async saveCookies(): Promise<void> {
+    try {
+      const cookies = await this.scraper.getCookies();
+      fs.writeFileSync(this.cookiesFilePath, JSON.stringify(cookies, null, 2), 'utf-8');
+      console.log('Saved cookies to:', this.cookiesFilePath);
+    } catch (error) {
+      console.error('Error saving cookies:', error);
+      throw error;
+    }
+  }
+
+  private async loadCookies(): Promise<any[] | null> {
+    try {
+      if (fs.existsSync(this.cookiesFilePath)) {
+        const cookiesData = fs.readFileSync(this.cookiesFilePath, 'utf-8');
+        return JSON.parse(cookiesData);
+      }
+      return null;
+    } catch (error) {
+      console.error('Error loading cookies:', error);
+      return null;
+    }
   }
 
   public static getInstance(): TweetScraper {
@@ -22,32 +61,51 @@ export class TweetScraper {
       TWITTER_USERNAME,
       TWITTER_PASSWORD,
       TWITTER_EMAIL,
-      TWITTER_APP_KEY,
-      TWITTER_APP_SECRET,
-      TWITTER_ACCESS_TOKEN,
-      TWITTER_ACCESS_SECRET,
       TWITTER_COOKIES,
     } = process.env;
 
-    if (TWITTER_COOKIES) {
-      await this.scraper.setCookies(JSON.parse(TWITTER_COOKIES));
-    } else if (TWITTER_USERNAME && TWITTER_PASSWORD) {
-      if (TWITTER_EMAIL && TWITTER_APP_KEY && TWITTER_APP_SECRET && 
-          TWITTER_ACCESS_TOKEN && TWITTER_ACCESS_SECRET) {
-        await this.scraper.login(
-          TWITTER_USERNAME,
-          TWITTER_PASSWORD,
-          TWITTER_EMAIL,
-          TWITTER_APP_KEY,
-          TWITTER_APP_SECRET,
-          TWITTER_ACCESS_TOKEN,
-          TWITTER_ACCESS_SECRET,
-        );
+    try {
+      // Try different authentication methods
+      if (TWITTER_COOKIES) {
+        await this.setCookiesFromArray(JSON.parse(TWITTER_COOKIES));
       } else {
-        await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD);
+        // Try loading cookies from file
+        const savedCookies = await this.loadCookies();
+        if (savedCookies) {
+          await this.setCookiesFromArray(savedCookies);
+        } else if (TWITTER_USERNAME && TWITTER_PASSWORD) {
+          // Login with credentials if no cookies available
+          await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD, TWITTER_EMAIL);
+          console.log('Logged in to Twitter');
+          await this.saveCookies();
+        } else {
+          throw new Error('No valid Twitter authentication method found');
+        }
       }
-    } else {
-      throw new Error('No valid Twitter authentication method found in environment variables');
+
+      // Verify login status
+      let loginAttempts = 0;
+      while (!(await this.scraper.isLoggedIn())) {
+        if (loginAttempts >= 10) {
+          if (TWITTER_USERNAME && TWITTER_PASSWORD) {
+            console.log('Retrying login with credentials...');
+            await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD, TWITTER_EMAIL);
+            await this.saveCookies();
+            loginAttempts = 0;
+          } else {
+            throw new Error('Failed to login after multiple attempts');
+          }
+        }
+        console.log('Waiting for Twitter login...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        loginAttempts++;
+      }
+
+      console.log('Successfully logged in to Twitter');
+      
+    } catch (error) {
+      console.error('Twitter initialization failed:', error);
+      throw error;
     }
   }
 
@@ -144,5 +202,16 @@ export class TweetScraper {
       console.error('Error fetching follower count:', error);
       return 0;
     }
+  }
+
+  private async setCookiesFromArray(cookiesArray: any[]): Promise<void> {
+    const cookieStrings = cookiesArray.map(
+      (cookie) => `${cookie.key}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}; ${
+        cookie.secure ? "Secure" : ""
+      }; ${cookie.httpOnly ? "HttpOnly" : ""}; SameSite=${
+        cookie.sameSite || "Lax"
+      }`
+    );
+    await this.scraper.setCookies(cookieStrings);
   }
 }
