@@ -113,8 +113,8 @@ export class SentimentClient {
       console.log(`Analyzed ${analyzedTweets.length} tweets`);
       console.log('Analyzed tweets:', analyzedTweets);
       const significantTweets = analyzedTweets.filter(tweet => 
-        tweet.analysis.score > 0.7 && 
-        tweet.analysis.credibilityScore > 0.6
+        tweet.analysis.score > 0.5 && 
+        tweet.analysis.credibilityScore > 0.32
       );
 
       console.log(`Found ${significantTweets.length} significant tweets`);

@@ -1,6 +1,5 @@
 import { OpenAI } from 'openai';
 import { Tweet } from 'agent-twitter-client';
-import { TweetScraper } from './tweetScraper';
 import { redis } from '../redis/config';
 
 export interface AnalyzedTweet extends Tweet {
