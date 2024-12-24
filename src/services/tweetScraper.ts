@@ -64,8 +64,11 @@ export class TweetScraper {
       TWITTER_COOKIES,
     } = process.env;
 
+    const MAX_LOGIN_RETRIES = 3;
+    let loginRetries = 0;
+
     try {
-      // Try different authentication methods
+      // Try cookies first
       if (TWITTER_COOKIES) {
         try {
           const parsedCookies = JSON.parse(TWITTER_COOKIES);
@@ -73,45 +76,50 @@ export class TweetScraper {
             throw new Error('TWITTER_COOKIES must be a valid JSON array');
           }
           await this.setCookiesFromArray(parsedCookies);
+          if (await this.scraper.isLoggedIn()) {
+            console.log('Successfully logged in using TWITTER_COOKIES');
+            return;
+          }
         } catch (cookieError) {
-          console.error('Failed to parse TWITTER_COOKIES:', cookieError);
-          // Fall through to try other authentication methods
+          console.error('Failed to use TWITTER_COOKIES:', cookieError);
         }
       }
 
-      // Try loading cookies from file
+      // Try saved cookies
       const savedCookies = await this.loadCookies();
       if (savedCookies) {
-        console.log('Loaded cookies from file...');
+        console.log('Attempting login with saved cookies...');
         await this.setCookiesFromArray(savedCookies);
-      } else if (TWITTER_USERNAME && TWITTER_PASSWORD) {
-        // Login with credentials if no cookies available
-        await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD, TWITTER_EMAIL);
-        console.log('Logged in to Twitter');
-        await this.saveCookies();
-      } else {
-        throw new Error('No valid Twitter authentication method found');
+        if (await this.scraper.isLoggedIn()) {
+          console.log('Successfully logged in using saved cookies');
+          return;
+        }
+        console.log('Saved cookies failed, falling back to credentials');
       }
 
-      // Verify login status
-      let loginAttempts = 0;
-      while (!(await this.scraper.isLoggedIn())) {
-        if (loginAttempts >= 10) {
-          if (TWITTER_USERNAME && TWITTER_PASSWORD) {
-            console.log('Retrying login with credentials...');
+      // Try credentials with retries
+      if (TWITTER_USERNAME && TWITTER_PASSWORD) {
+        while (loginRetries < MAX_LOGIN_RETRIES) {
+          try {
             await this.scraper.login(TWITTER_USERNAME, TWITTER_PASSWORD, TWITTER_EMAIL);
-            await this.saveCookies();
-            loginAttempts = 0;
-          } else {
-            throw new Error('Failed to login after multiple attempts');
+            if (await this.scraper.isLoggedIn()) {
+              console.log('Successfully logged in with credentials');
+              await this.saveCookies();
+              return;
+            }
+          } catch (loginError) {
+            loginRetries++;
+            console.error(`Login attempt ${loginRetries} failed:`, loginError);
+            if (loginRetries === MAX_LOGIN_RETRIES) {
+              throw new Error(`Failed to login after ${MAX_LOGIN_RETRIES} attempts`);
+            }
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 5000 * loginRetries));
           }
         }
-        console.log('Waiting for Twitter login...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        loginAttempts++;
       }
 
-      console.log('Successfully logged in to Twitter');
+      throw new Error('No valid Twitter authentication method succeeded');
       
     } catch (error) {
       console.error('Twitter initialization failed:', error);
