@@ -47,21 +47,19 @@ export class SentimentClient {
         await this.runMainLoop();
       } catch (error) {
         console.error('Error in main loop:', error);
-        throw error;
       } finally {
         this.isRunning = false;
-        // Add the next job after 30 seconds
-        setTimeout(() => {
-          this.analysisQueue.add({}, {
-            removeOnComplete: true,
-            removeOnFail: 10,
-            attempts: 3,
-            backoff: {
-              type: 'exponential',
-              delay: 60000,
-            },
-          });
-        }, 30000);
+        // Schedule next job immediately after completion
+        await this.analysisQueue.add({}, {
+          removeOnComplete: true,
+          removeOnFail: 10,
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 60000,
+          },
+          delay: 30000 // Add a 30-second delay between jobs
+        });
       }
     });
 
