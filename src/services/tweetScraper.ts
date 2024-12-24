@@ -238,25 +238,4 @@ export class TweetScraper {
     );
     await this.scraper.setCookies(cookieStrings);
   }
-
-  private async retryOperation<T>(
-    operation: () => Promise<T>,
-    maxRetries: number = 3,
-    initialDelay: number = 1000
-  ): Promise<T> {
-    let lastError;
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error;
-        console.error(`Attempt ${i + 1} failed:`, error);
-        if (i < maxRetries - 1) {
-          const delay = initialDelay * Math.pow(2, i);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-    }
-    throw lastError;
-  }
 }
