@@ -28,14 +28,8 @@ export class TweetScraper {
   private async saveCookies(): Promise<void> {
     try {
       const cookies = await this.scraper.getCookies();
-      // Save to Redis instead of file system
-      await redis.set(
-        `twitter:cookies:${process.env.TWITTER_USERNAME}`,
-        JSON.stringify(cookies),
-        'EX',
-        86400 // 24 hours expiry
-      );
-      console.log('Saved cookies to Redis');
+      fs.writeFileSync(this.cookiesFilePath, JSON.stringify(cookies, null, 2), 'utf-8');
+      console.log('Saved cookies to:', this.cookiesFilePath);
     } catch (error) {
       console.error('Error saving cookies:', error);
       throw error;
@@ -44,8 +38,11 @@ export class TweetScraper {
 
   private async loadCookies(): Promise<any[] | null> {
     try {
-      const cookiesData = await redis.get(`twitter:cookies:${process.env.TWITTER_USERNAME}`);
-      return cookiesData ? JSON.parse(cookiesData) : null;
+      if (fs.existsSync(this.cookiesFilePath)) {
+        const cookiesData = fs.readFileSync(this.cookiesFilePath, 'utf-8');
+        return JSON.parse(cookiesData);
+      }
+      return null;
     } catch (error) {
       console.error('Error loading cookies:', error);
       return null;
