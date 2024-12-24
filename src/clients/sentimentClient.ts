@@ -58,7 +58,7 @@ export class SentimentClient {
             type: 'exponential',
             delay: 60000,
           },
-          delay: 30000 // Add a 30-second delay between jobs
+          delay: 1200000 // Add a 20 minute delay between jobs
         });
       }
     });
@@ -109,7 +109,7 @@ export class SentimentClient {
 
       const analyzedTweets = await this.tweetAnalyzer.analyzeTweets(allTweets);
       console.log(`Analyzed ${analyzedTweets.length} tweets`);
-      console.log('Analyzed tweets:', analyzedTweets);
+      //console.log('Analyzed tweets:', analyzedTweets);
       const significantTweets = analyzedTweets.filter(tweet => 
         tweet.analysis.score > 0.5 && 
         tweet.analysis.credibilityScore > 0.32
