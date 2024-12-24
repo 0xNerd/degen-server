@@ -132,7 +132,7 @@ class AppServer {
 
     // Basic route
     this.app.get('/', (req, res) => {
-      res.send('Hello from your Token Gating Bot Backend!');
+      res.send('Hello world!');
     });
   }
 
@@ -141,7 +141,6 @@ class AppServer {
       // First connect MongoDB
       await mongoose.connect(mongoURI!);
       console.log('MongoDB connected');
-
       // Initialize BalanceClient
       await BalanceClient.getInstance().initialize();
       console.log('BalanceClient initialized');

@@ -28,8 +28,14 @@ export class TweetScraper {
   private async saveCookies(): Promise<void> {
     try {
       const cookies = await this.scraper.getCookies();
-      fs.writeFileSync(this.cookiesFilePath, JSON.stringify(cookies, null, 2), 'utf-8');
-      console.log('Saved cookies to:', this.cookiesFilePath);
+      // Save to Redis instead of file system
+      await redis.set(
+        `twitter:cookies:${process.env.TWITTER_USERNAME}`,
+        JSON.stringify(cookies),
+        'EX',
+        86400 // 24 hours expiry
+      );
+      console.log('Saved cookies to Redis');
     } catch (error) {
       console.error('Error saving cookies:', error);
       throw error;
@@ -38,11 +44,8 @@ export class TweetScraper {
 
   private async loadCookies(): Promise<any[] | null> {
     try {
-      if (fs.existsSync(this.cookiesFilePath)) {
-        const cookiesData = fs.readFileSync(this.cookiesFilePath, 'utf-8');
-        return JSON.parse(cookiesData);
-      }
-      return null;
+      const cookiesData = await redis.get(`twitter:cookies:${process.env.TWITTER_USERNAME}`);
+      return cookiesData ? JSON.parse(cookiesData) : null;
     } catch (error) {
       console.error('Error loading cookies:', error);
       return null;
@@ -234,5 +237,26 @@ export class TweetScraper {
       }`
     );
     await this.scraper.setCookies(cookieStrings);
+  }
+
+  private async retryOperation<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    initialDelay: number = 1000
+  ): Promise<T> {
+    let lastError;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        console.error(`Attempt ${i + 1} failed:`, error);
+        if (i < maxRetries - 1) {
+          const delay = initialDelay * Math.pow(2, i);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    throw lastError;
   }
 }
