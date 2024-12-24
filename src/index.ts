@@ -108,20 +108,20 @@ class AppServer {
       try {
         const { sessionId, inviteUrl, telegramId } = req.body;
         console.log('start check', req.body);
-        if (!sessionId || !inviteUrl || !telegramId) { return res.status(400).json({ error: 'Invalid request' }); }
-        // Find user by sessionId
-        let user = await User.findOne({ sessionId: sessionId });
-        // add inviteUrl to user if not already present
-        user.inviteUrl = inviteUrl;
-        await user.save();
-        if (!user) {
-          // Create or update user data
-          user = await User.findOneAndUpdate(
-            { sessionId: sessionId }, // Find by session ID
-            { telegramUserId: telegramId, inviteUrl: inviteUrl }, // Update data (replace 123 with actual user ID)
-            { upsert: true, new: true } // Create if not found, return updated document
-          );
-        } 
+        if (!sessionId || !inviteUrl || !telegramId) { 
+          return res.status(400).json({ error: 'Invalid request' }); 
+        }
+
+        // Find or create user in one operation
+        const user = await User.findOneAndUpdate(
+          { sessionId: sessionId },
+          { 
+            telegramUserId: telegramId, 
+            inviteUrl: inviteUrl 
+          },
+          { upsert: true, new: true }
+        );
+
         res.status(200).json({ message: 'Check started successfully', user });
 
       } catch (error) {
