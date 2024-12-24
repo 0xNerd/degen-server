@@ -28,23 +28,61 @@ export class TweetScraper {
   private async saveCookies(): Promise<void> {
     try {
       const cookies = await this.scraper.getCookies();
-      fs.writeFileSync(this.cookiesFilePath, JSON.stringify(cookies, null, 2), 'utf-8');
+      if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
+        console.warn('No valid cookies to save');
+        return;
+      }
+      
+      // Ensure directory exists
+      if (!fs.existsSync(TweetScraper.CACHE_DIR)) {
+        fs.mkdirSync(TweetScraper.CACHE_DIR, { recursive: true });
+      }
+
+      // Write to temporary file first
+      const tempPath = `${this.cookiesFilePath}.tmp`;
+      fs.writeFileSync(tempPath, JSON.stringify(cookies, null, 2), 'utf-8');
+      
+      // Rename temp file to actual file (atomic operation)
+      fs.renameSync(tempPath, this.cookiesFilePath);
+      
       console.log('Saved cookies to:', this.cookiesFilePath);
     } catch (error) {
       console.error('Error saving cookies:', error);
-      throw error;
+      // Don't throw error to prevent initialization failure
     }
   }
 
   private async loadCookies(): Promise<any[] | null> {
     try {
-      if (fs.existsSync(this.cookiesFilePath)) {
-        const cookiesData = fs.readFileSync(this.cookiesFilePath, 'utf-8');
-        return JSON.parse(cookiesData);
+      if (!fs.existsSync(this.cookiesFilePath)) {
+        console.log('No cookie file found at:', this.cookiesFilePath);
+        return null;
       }
-      return null;
+
+      const cookiesData = fs.readFileSync(this.cookiesFilePath, 'utf-8');
+      if (!cookiesData || cookiesData.trim().length === 0) {
+        console.log('Cookie file is empty');
+        return null;
+      }
+
+      const cookies = JSON.parse(cookiesData);
+      if (!Array.isArray(cookies)) {
+        console.log('Invalid cookie format - expected array');
+        return null;
+      }
+
+      return cookies;
     } catch (error) {
       console.error('Error loading cookies:', error);
+      // If file is corrupted, try to remove it
+      try {
+        if (fs.existsSync(this.cookiesFilePath)) {
+          fs.unlinkSync(this.cookiesFilePath);
+          console.log('Removed corrupted cookie file');
+        }
+      } catch (unlinkError) {
+        console.error('Error removing corrupted cookie file:', unlinkError);
+      }
       return null;
     }
   }
