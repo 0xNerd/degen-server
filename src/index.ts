@@ -112,15 +112,25 @@ class AppServer {
           return res.status(400).json({ error: 'Invalid request' }); 
         }
 
-        // Find or create user in one operation
-        const user = await User.findOneAndUpdate(
-          { sessionId: sessionId },
-          { 
-            telegramUserId: telegramId, 
-            inviteUrl: inviteUrl 
-          },
-          { upsert: true, new: true }
-        );
+        // First try to find by telegramUserId
+        let user = await User.findOne({ telegramUserId: telegramId });
+        
+        if (user) {
+          // Update existing user
+          user.sessionId = sessionId;
+          user.inviteUrl = inviteUrl;
+          await user.save();
+        } else {
+          // Create new user if none exists
+          user = await User.findOneAndUpdate(
+            { sessionId: sessionId },
+            { 
+              telegramUserId: telegramId, 
+              inviteUrl: inviteUrl 
+            },
+            { upsert: true, new: true }
+          );
+        }
 
         res.status(200).json({ message: 'Check started successfully', user });
 
